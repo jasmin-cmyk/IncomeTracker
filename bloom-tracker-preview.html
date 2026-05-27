@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bloom Tracker 🌸</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{}}}</script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" crossorigin></script>
+<script src="https://unpkg.com/framer-motion@11/dist/framer-motion.js" crossorigin></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:'Nunito',sans-serif}
+.no-scrollbar::-webkit-scrollbar{display:none}.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
+select option{background:#fff;color:#333}.dark select option{background:#1a0a1e;color:#fce7f3}
+input[type=date]::-webkit-calendar-picker-indicator{opacity:.5;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect,useMemo,createElement:h,Fragment}=React;
+const {BarChart,Bar,LineChart,Line,PieChart,Pie,Cell,XAxis,YAxis,Tooltip,ResponsiveContainer,Legend}=Recharts;
+const {motion,AnimatePresence}=window.Motion||{motion:{div:(p)=>h('div',p),button:(p)=>h('button',p)},AnimatePresence:(p)=>h(Fragment,null,p.children)};
+
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const CATS=["Bills","Food","Savings","PMG Bills","Personal Spending"];
+const CCAT={Bills:"#e879a0",Food:"#f9a8d4",Savings:"#c084fc","PMG Bills":"#fb923c","Personal Spending":"#a78bfa"};
+const CICONS={Bills:"⚡",Food:"🍜",Savings:"💰","PMG Bills":"📋","Personal Spending":"💅"};
+const fmt=n=>"₱"+Number(n).toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+function genDemo(){
+  const t=[];let id=1;
+  const inc=["Salary","Freelance","Bonus","Side Project","Dividend"];
+  const exp={Bills:["Electricity","Water","Internet","Rent","Phone"],Food:["Groceries","Restaurant","Coffee","Delivery","Snacks"],Savings:["Emergency Fund","Investment","Travel Fund","Retirement","Goal Save"],"PMG Bills":["PMG Fee","PMG Premium","PMG Service","PMG Renewal","PMG Extra"],"Personal Spending":["Clothes","Books","Skincare","Gym","Entertainment"]};
+  for(let m=0;m<12;m++){
+    const ic=Math.floor(Math.random()*2)+1;
+    for(let i=0;i<ic;i++) t.push({id:id++,type:"income",name:inc[Math.floor(Math.random()*5)],amount:Math.round((35000+Math.random()*15000)*100)/100,category:null,month:m,year:2025,date:`2025-${String(m+1).padStart(2,"0")}-${String(Math.floor(Math.random()*28)+1).padStart(2,"0")}`});
+    const ec=Math.floor(Math.random()*4)+3;
+    for(let i=0;i<ec;i++){const cat=CATS[Math.floor(Math.random()*5)];t.push({id:id++,type:"expense",name:exp[cat][Math.floor(Math.random()*5)],amount:Math.round((500+Math.random()*9500)*100)/100,category:cat,month:m,year:2025,date:`2025-${String(m+1).padStart(2,"0")}-${String(Math.floor(Math.random()*28)+1).padStart(2,"0")}`});}
+  }
+  return t;
+}
+function load(){try{const r=localStorage.getItem("bloom_txns");if(r)return JSON.parse(r);}catch{}const d=genDemo();localStorage.setItem("bloom_txns",JSON.stringify(d));return d;}
+function saveLs(t){localStorage.setItem("bloom_txns",JSON.stringify(t));}
+
+function TxnRow({t,dark,muted,onEdit,onDelete,showDate}){
+  return h('div',{className:`flex items-center gap-3 py-2.5 border-b ${dark?"border-pink-900/20":"border-pink-50"} last:border-0`},
+    h('div',{className:`w-9 h-9 rounded-full flex items-center justify-center text-sm flex-shrink-0 ${t.type==="income"?"bg-emerald-100 text-emerald-600":"bg-pink-100 text-pink-600"}`},
+      t.type==="income"?"↑":CICONS[t.category]||"↓"),
+    h('div',{className:"flex-1 min-w-0"},
+      h('p',{className:"font-semibold text-sm truncate"},t.name),
+      h('p',{className:`text-[10px] ${muted}`},`${t.category||"Income"}${showDate?` · ${t.date}`:""}`)),
+    h('span',{className:`font-black text-sm ${t.type==="income"?"text-emerald-400":"text-rose-400"}`},`${t.type==="income"?"+":"-"}${fmt(t.amount)}`),
+    h('div',{className:"flex gap-1"},
+      h('button',{onClick:onEdit,className:`w-7 h-7 rounded-lg flex items-center justify-center text-xs ${dark?"hover:bg-gray-800":"hover:bg-pink-50"} transition-colors`},"✎"),
+      h('button',{onClick:onDelete,className:`w-7 h-7 rounded-lg flex items-center justify-center text-xs ${dark?"hover:bg-rose-900/40 text-rose-400":"hover:bg-rose-50 text-rose-400"} transition-colors`},"✕")
+    )
+  );
+}
+
+function App(){
+  const [txns,setTxns]=useState(load);
+  const [dark,setDark]=useState(()=>localStorage.getItem("bloom_dark")==="1");
+  const [tab,setTab]=useState("dashboard");
+  const [filterMonth,setFilterMonth]=useState(new Date().getMonth());
+  const [filterYear,setFilterYear]=useState(2025);
+  const [modal,setModal]=useState(null);
+  const [form,setForm]=useState({type:"expense",name:"",amount:"",category:CATS[0],date:new Date().toISOString().slice(0,10)});
+  const [delConfirm,setDelConfirm]=useState(null);
+
+  useEffect(()=>{saveLs(txns);},[txns]);
+  useEffect(()=>{localStorage.setItem("bloom_dark",dark?"1":"0");document.documentElement.classList.toggle("dark",dark);},[dark]);
+
+  const mTxns=useMemo(()=>txns.filter(t=>t.month===filterMonth&&t.year===filterYear),[txns,filterMonth,filterYear]);
+  const yTxns=useMemo(()=>txns.filter(t=>t.year===filterYear),[txns,filterYear]);
+  const mInc=useMemo(()=>mTxns.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0),[mTxns]);
+  const mExp=useMemo(()=>mTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0),[mTxns]);
+  const mBal=mInc-mExp;
+  const yInc=useMemo(()=>yTxns.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0),[yTxns]);
+  const yExp=useMemo(()=>yTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0),[yTxns]);
+  const yBal=yInc-yExp;
+
+  const chartData=useMemo(()=>MONTHS.map((label,i)=>{
+    const mt=yTxns.filter(t=>t.month===i);
+    return{name:label,Income:mt.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0),Expenses:mt.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0)};
+  }),[yTxns]);
+
+  const catData=useMemo(()=>{
+    const m={};mTxns.filter(t=>t.type==="expense").forEach(t=>{m[t.category]=(m[t.category]||0)+t.amount;});
+    return Object.entries(m).map(([name,value])=>({name,value}));
+  },[mTxns]);
+
+  const savData=useMemo(()=>MONTHS.map((label,i)=>{
+    const mt=yTxns.filter(t=>t.month===i);
+    const inc=mt.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);
+    const exp=mt.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
+    return{name:label,Savings:inc-exp};
+  }),[yTxns]);
+
+  function openAdd(type="expense"){
+    setForm({type,name:"",amount:"",category:CATS[0],date:`${filterYear}-${String(filterMonth+1).padStart(2,"0")}-01`});
+    setModal({mode:"add"});
+  }
+  function openEdit(txn){
+    setForm({type:txn.type,name:txn.name,amount:String(txn.amount),category:txn.category||CATS[0],date:txn.date});
+    setModal({mode:"edit",txn});
+  }
+  function submitForm(){
+    if(!form.name.trim()||!form.amount)return;
+    const d=new Date(form.date);
+    const entry={id:modal.mode==="edit"?modal.txn.id:Date.now(),type:form.type,name:form.name.trim(),amount:parseFloat(form.amount),category:form.type==="expense"?form.category:null,month:d.getMonth(),year:d.getFullYear(),date:form.date};
+    if(modal.mode==="edit") setTxns(p=>p.map(t=>t.id===entry.id?entry:t));
+    else setTxns(p=>[...p,entry]);
+    setModal(null);
+  }
+  function deleteTxn(id){setTxns(p=>p.filter(t=>t.id!==id));setDelConfirm(null);}
+
+  const bg=dark?"bg-gray-950":"bg-rose-50";
+  const card=dark?"bg-gray-900 border border-pink-900/40":"bg-white/80 border border-pink-100";
+  const text=dark?"text-pink-100":"text-rose-900";
+  const muted=dark?"text-pink-300/60":"text-rose-400";
+  const inp=dark?"bg-gray-800 border-pink-800 text-pink-100 placeholder-pink-700":"bg-pink-50 border-pink-200 text-rose-800 placeholder-pink-300";
+  const btnP="bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-xl px-5 py-2.5 hover:opacity-90 active:scale-95 transition-all shadow-lg shadow-pink-200/50";
+  const btnG=dark?"border border-pink-800 text-pink-300 rounded-xl px-4 py-2 hover:bg-pink-900/30 transition-all":"border border-pink-200 text-rose-500 rounded-xl px-4 py-2 hover:bg-pink-50 transition-all";
+
+  const tabs=[{id:"dashboard",icon:"⊞",label:"Dashboard"},{id:"transactions",icon:"≡",label:"Transactions"},{id:"analytics",icon:"◈",label:"Analytics"},{id:"yearly",icon:"◉",label:"Year View"}];
+  const tooltipStyle={background:dark?"#1a0a1e":"#fff",border:"1px solid #fce7f3",borderRadius:12,fontSize:11};
+  const tickStyle={fontSize:10,fill:dark?"#f9a8d4":"#be185d"};
+
+  const monthBtn=(i,label)=>h('button',{key:i,onClick:()=>setFilterMonth(i),className:`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${filterMonth===i?"bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-md":`${dark?"bg-gray-800 text-pink-300":"bg-white text-rose-400 border border-pink-100"}`}`},label);
+
+  return h('div',{className:`min-h-screen ${bg} ${text} transition-colors duration-300`,style:{fontFamily:"'Nunito',sans-serif"}},
+    // Header
+    h('header',{className:`sticky top-0 z-30 ${dark?"bg-gray-950/90":"bg-rose-50/90"} backdrop-blur-md border-b ${dark?"border-pink-900/30":"border-pink-100"} px-4 py-3 flex items-center justify-between`},
+      h('div',{className:"flex items-center gap-2"},
+        h('span',{className:"text-2xl"},"🌸"),
+        h('div',null,
+          h('h1',{className:"font-black text-lg leading-none",style:{background:"linear-gradient(135deg,#ec4899,#f43f5e)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}},"Bloom Tracker"),
+          h('p',{className:`text-[10px] ${muted}`},"Your financial garden")
+        )
+      ),
+      h('div',{className:"flex items-center gap-2"},
+        h('select',{value:filterYear,onChange:e=>setFilterYear(Number(e.target.value)),className:`text-xs rounded-lg px-2 py-1 border ${inp} outline-none`},
+          [2024,2025,2026].map(y=>h('option',{key:y},y))
+        ),
+        h('button',{onClick:()=>setDark(d=>!d),className:`w-9 h-9 rounded-full flex items-center justify-center text-lg ${dark?"bg-pink-900/40 text-yellow-300":"bg-pink-100 text-rose-500"} transition-colors`},dark?"☀":"🌙")
+      )
+    ),
+    // Nav
+    h('nav',{className:`sticky top-[57px] z-20 ${dark?"bg-gray-950/90":"bg-rose-50/90"} backdrop-blur-md border-b ${dark?"border-pink-900/30":"border-pink-100"} flex overflow-x-auto no-scrollbar`},
+      tabs.map(t=>h('button',{key:t.id,onClick:()=>setTab(t.id),className:`flex-1 min-w-[80px] py-2.5 text-xs font-bold transition-all relative whitespace-nowrap px-2 ${tab===t.id?"text-pink-500":muted}`},
+        h('span',{className:"block text-base mb-0.5"},t.icon),t.label,
+        tab===t.id&&h('div',{className:"absolute bottom-0 left-2 right-2 h-0.5 rounded-full",style:{background:"linear-gradient(90deg,#f472b6,#f43f5e)"}})
+      ))
+    ),
+    // Main
+    h('main',{className:"max-w-2xl mx-auto px-4 py-5 pb-24 space-y-5"},
+      // ── DASHBOARD ──
+      tab==="dashboard"&&h('div',{className:"space-y-5"},
+        h('div',{className:"flex gap-1.5 overflow-x-auto no-scrollbar pb-1"},MONTHS.map((m,i)=>monthBtn(i,m))),
+        h('div',{className:"grid grid-cols-2 gap-3"},
+          [{label:"Income",val:mInc,grad:"from-emerald-400 to-teal-400",icon:"↑"},
+           {label:"Expenses",val:mExp,grad:"from-pink-500 to-rose-400",icon:"↓"},
+           {label:"Balance",val:mBal,grad:mBal>=0?"from-violet-400 to-purple-400":"from-red-400 to-rose-500",icon:"="},
+           {label:"Monthly Savings",val:mBal,grad:"from-amber-400 to-orange-400",icon:"❋"}].map(c=>
+            h('div',{key:c.label,className:`${card} rounded-2xl p-4 shadow-sm`},
+              h('div',{className:`w-8 h-8 rounded-xl flex items-center justify-center text-white font-black text-sm mb-2`,style:{background:`linear-gradient(135deg,var(--tw-gradient-from,#10b981),var(--tw-gradient-to,#059669))`}},c.icon),
+              h('p',{className:`text-[10px] font-semibold uppercase tracking-wider ${muted}`},c.label),
+              h('p',{className:"font-black text-base mt-0.5 leading-tight"},fmt(c.val))
+            )
+          )
+        ),
+        h('div',{className:"flex gap-3"},
+          h('button',{onClick:()=>openAdd("income"),className:`flex-1 text-white font-bold rounded-xl px-5 py-2.5 shadow-lg transition-all hover:opacity-90 text-sm`,style:{background:"linear-gradient(135deg,#10b981,#059669)"}},"+ Add Income"),
+          h('button',{onClick:()=>openAdd("expense"),className:`flex-1 ${btnP} text-sm`},"+ Add Expense")
+        ),
+        catData.length>0&&h('div',{className:`${card} rounded-2xl p-4 shadow-sm`},
+          h('h3',{className:"font-bold text-sm mb-3"},`Expenses by Category — ${MONTHS[filterMonth]}`),
+          h(ResponsiveContainer,{width:"100%",height:200},
+            h(PieChart,null,
+              h(Pie,{data:catData,cx:"50%",cy:"50%",innerRadius:50,outerRadius:80,paddingAngle:3,dataKey:"value"},
+                catData.map((e,i)=>h(Cell,{key:i,fill:CCAT[e.name]||"#f9a8d4"}))
+              ),
+              h(Tooltip,{formatter:v=>fmt(v),contentStyle:tooltipStyle})
+            )
+          ),
+          h('div',{className:"flex flex-wrap gap-2 mt-2"},
+            catData.map(e=>h('span',{key:e.name,className:"flex items-center gap-1 text-[10px] font-semibold"},
+              h('span',{className:"w-2.5 h-2.5 rounded-full inline-block",style:{background:CCAT[e.name]}}),e.name))
+          )
+        ),
+        h('div',{className:`${card} rounded-2xl p-4 shadow-sm`},
+          h('h3',{className:"font-bold text-sm mb-3"},`Recent — ${MONTHS[filterMonth]} ${filterYear}`),
+          mTxns.length===0
+            ?h('p',{className:`text-sm ${muted} text-center py-4`},"No transactions yet. Add one! 🌸")
+            :mTxns.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8).map(t=>
+              h(TxnRow,{key:t.id,t,dark,muted,onEdit:()=>openEdit(t),onDelete:()=>setDelConfirm(t.id)})
+            )
+        )
+      ),
+      // ── TRANSACTIONS ──
+      tab==="transactions"&&h('div',{className:"space-y-4"},
+        h('div',{className:"flex items-center justify-between"},
+          h('h2',{className:"font-black text-lg"},"Transactions"),
+          h('div',{className:"flex gap-2"},
+            h('button',{onClick:()=>openAdd("income"),className:`${btnG} text-xs`,style:{borderColor:"#10b981",color:"#10b981"}},"+ Income"),
+            h('button',{onClick:()=>openAdd("expense"),className:`${btnP} text-xs`},"+ Expense")
+          )
+        ),
+        h('div',{className:"flex gap-1.5 overflow-x-auto no-scrollbar pb-1"},
+          h('button',{onClick:()=>setFilterMonth(-1),className:`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${filterMonth===-1?"bg-gradient-to-r from-pink-500 to-rose-400 text-white":`${dark?"bg-gray-800 text-pink-300":"bg-white text-rose-400 border border-pink-100"}`}`},"All"),
+          MONTHS.map((m,i)=>monthBtn(i,m))
+        ),
+        (filterMonth===-1?yTxns:mTxns).slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>
+          h(TxnRow,{key:t.id,t,dark,muted,onEdit:()=>openEdit(t),onDelete:()=>setDelConfirm(t.id),showDate:true})
+        ),
+        (filterMonth===-1?yTxns:mTxns).length===0&&h('p',{className:`text-sm ${muted} text-center py-8`},"No transactions found 🌸")
+      ),
+      // ── ANALYTICS ──
+      tab==="analytics"&&h('div',{className:"space-y-5"},
+        h('h2',{className:"font-black text-lg"},`Analytics — ${filterYear}`),
+        h('div',{className:`${card} rounded-2xl p-4 shadow-sm`},
+          h('h3',{className:"font-bold text-sm mb-4"},"Monthly Overview"),
+          h(ResponsiveContainer,{width:"100%",height:220},
+            h(BarChart,{data:chartData,barCategoryGap:"30%"},
+              h(XAxis,{dataKey:"name",tick:tickStyle,axisLine:false,tickLine:false}),
+              h(YAxis,{tick:{fontSize:9,fill:dark?"#f9a8d4":"#be185d"},axisLine:false,tickLine:false,tickFormatter:v=>"₱"+v.toLocaleString()}),
+              h(Tooltip,{formatter:v=>fmt(v),contentStyle:tooltipStyle}),
+              h(Bar,{dataKey:"Income",fill:"#10b981",radius:[4,4,0,0]}),
+              h(Bar,{dataKey:"Expenses",fill:"#f43f5e",radius:[4,4,0,0]}),
+              h(Legend,{wrapperStyle:{fontSize:11}})
+            )
+          )
+        ),
+        h('div',{className:`${card} rounded-2xl p-4 shadow-sm`},
+          h('h3',{className:"font-bold text-sm mb-4"},"Net Savings Trend"),
+          h(ResponsiveContainer,{width:"100%",height:200},
+            h(LineChart,{data:savData},
+              h(XAxis,{dataKey:"name",tick:tickStyle,axisLine:false,tickLine:false}),
+              h(YAxis,{tick:{fontSize:9,fill:dark?"#f9a8d4":"#be185d"},axisLine:false,tickLine:false,tickFormatter:v=>"₱"+v.toLocaleString()}),
+              h(Tooltip,{formatter:v=>fmt(v),contentStyle:tooltipStyle}),
+              h(Line,{type:"monotone",dataKey:"Savings",stroke:"#c084fc",strokeWidth:2.5,dot:{r:4,fill:"#c084fc"},activeDot:{r:6}})
+            )
+          )
+        ),
+        h('div',{className:`${card} rounded-2xl p-4 shadow-sm`},
+          h('h3',{className:"font-bold text-sm mb-3"},`Category Breakdown — ${MONTHS[filterMonth<0?0:filterMonth]}`),
+          CATS.map(cat=>{
+            const total=(filterMonth<0?yTxns:mTxns).filter(t=>t.type==="expense"&&t.category===cat).reduce((s,t)=>s+t.amount,0);
+            const max=Math.max(1,...CATS.map(c=>(filterMonth<0?yTxns:mTxns).filter(t=>t.type==="expense"&&t.category===c).reduce((s,t)=>s+t.amount,0)));
+            return h('div',{key:cat,className:"mb-3"},
+              h('div',{className:"flex justify-between text-xs font-semibold mb-1"},h('span',null,cat),h('span',null,fmt(total))),
+              h('div',{className:`h-2 rounded-full ${dark?"bg-gray-800":"bg-pink-50"} overflow-hidden`},
+                h('div',{className:"h-full rounded-full transition-all duration-700",style:{width:`${(total/max)*100}%`,background:CCAT[cat]}})
+              )
+            );
+          })
+        ),
+        h('div',{className:"grid grid-cols-3 gap-3"},
+          [{label:"Year Income",val:yInc,color:"text-emerald-400"},{label:"Year Expenses",val:yExp,color:"text-rose-400"},{label:"Net Balance",val:yBal,color:"text-violet-400"}].map(s=>
+            h('div',{key:s.label,className:`${card} rounded-2xl p-3 shadow-sm text-center`},
+              h('p',{className:`text-[10px] font-bold uppercase ${muted} mb-1`},s.label),
+              h('p',{className:`font-black text-sm ${s.color}`},fmt(s.val))
+            )
+          )
+        )
+      ),
+      // ── YEARLY ──
+      tab==="yearly"&&h('div',{className:"space-y-4"},
+        h('h2',{className:"font-black text-lg"},`Year Overview — ${filterYear}`),
+        h('div',{className:"grid grid-cols-2 gap-3"},
+          [{label:"Total Income",val:yInc,grad:"linear-gradient(135deg,#34d399,#0d9488)"},{label:"Total Expenses",val:yExp,grad:"linear-gradient(135deg,#f472b6,#f43f5e)"},{label:"Net Balance",val:yBal,grad:yBal>=0?"linear-gradient(135deg,#a78bfa,#7c3aed)":"linear-gradient(135deg,#f87171,#e11d48)"},{label:"Avg Monthly",val:yBal/12,grad:"linear-gradient(135deg,#fbbf24,#f97316)"}].map(c=>
+            h('div',{key:c.label,className:`${card} rounded-2xl p-4 shadow-sm`},
+              h('div',{className:"h-1 rounded-full mb-3",style:{background:c.grad}}),
+              h('p',{className:`text-[10px] font-bold uppercase ${muted}`},c.label),
+              h('p',{className:"font-black text-base mt-1"},fmt(c.val))
+            )
+          )
+        ),
+        h('div',{className:`${card} rounded-2xl p-4 shadow-sm overflow-x-auto`},
+          h('h3',{className:"font-bold text-sm mb-3"},"Month-by-Month"),
+          h('table',{className:"w-full text-xs"},
+            h('thead',null,h('tr',{className:muted},
+              h('th',{className:"text-left pb-2 font-bold"},"Month"),
+              h('th',{className:"text-right pb-2 font-bold"},"Income"),
+              h('th',{className:"text-right pb-2 font-bold"},"Expenses"),
+              h('th',{className:"text-right pb-2 font-bold"},"Balance")
+            )),
+            h('tbody',null,MONTHS.map((m,i)=>{
+              const mt=yTxns.filter(t=>t.month===i);
+              const inc=mt.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);
+              const exp=mt.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
+              const bal=inc-exp;
+              return h('tr',{key:m,className:`border-t ${dark?"border-pink-900/30":"border-pink-50"} cursor-pointer hover:opacity-80`,onClick:()=>{setFilterMonth(i);setTab("dashboard");}},
+                h('td',{className:"py-2 font-semibold"},m),
+                h('td',{className:"py-2 text-right text-emerald-400 font-semibold"},fmt(inc)),
+                h('td',{className:"py-2 text-right text-rose-400 font-semibold"},fmt(exp)),
+                h('td',{className:`py-2 text-right font-bold ${bal>=0?"text-violet-400":"text-red-400"}`},fmt(bal))
+              );
+            }))
+          )
+        ),
+        h('div',{className:`${card} rounded-2xl p-4 shadow-sm`},
+          h('h3',{className:"font-bold text-sm mb-4"},"Income vs Expenses"),
+          h(ResponsiveContainer,{width:"100%",height:240},
+            h(BarChart,{data:chartData},
+              h(XAxis,{dataKey:"name",tick:{fontSize:9,fill:dark?"#f9a8d4":"#be185d"},axisLine:false,tickLine:false}),
+              h(YAxis,{tick:{fontSize:8,fill:dark?"#f9a8d4":"#be185d"},axisLine:false,tickLine:false,tickFormatter:v=>"₱"+Math.round(v/1000)+"k"}),
+              h(Tooltip,{formatter:v=>fmt(v),contentStyle:tooltipStyle}),
+              h(Bar,{dataKey:"Income",fill:"#10b981",radius:[3,3,0,0]}),
+              h(Bar,{dataKey:"Expenses",fill:"#f43f5e",radius:[3,3,0,0]}),
+              h(Legend,{wrapperStyle:{fontSize:10}})
+            )
+          )
+        )
+      )
+    ),
+    // ── ADD/EDIT MODAL ──
+    modal&&h('div',{className:"fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40",style:{backdropFilter:"blur(4px)"},onClick:e=>{if(e.target===e.currentTarget)setModal(null)}},
+      h('div',{className:`w-full max-w-md ${dark?"bg-gray-900 border border-pink-900/40":"bg-white border border-pink-100"} rounded-3xl p-6 shadow-2xl`},
+        h('div',{className:"flex items-center justify-between mb-5"},
+          h('h3',{className:"font-black text-base"},modal.mode==="add"?`Add ${form.type==="income"?"Income":"Expense"}`:"Edit Transaction"),
+          h('button',{onClick:()=>setModal(null),className:`w-8 h-8 rounded-full flex items-center justify-center text-lg ${dark?"bg-gray-800":"bg-pink-50"}`},"×")
+        ),
+        modal.mode==="add"&&h('div',{className:`flex rounded-xl overflow-hidden border mb-4 ${dark?"border-pink-900":"border-pink-100"}`},
+          ["income","expense"].map(tp=>h('button',{key:tp,onClick:()=>setForm(f=>({...f,type:tp})),className:`flex-1 py-2 text-sm font-bold capitalize transition-all ${form.type===tp?tp==="income"?"bg-emerald-500 text-white":"bg-gradient-to-r from-pink-500 to-rose-400 text-white":dark?"text-pink-300":"text-rose-400"}`},tp==="income"?"↑ Income":"↓ Expense"))
+        ),
+        h('div',{className:"space-y-3"},
+          h('input',{placeholder:"Name / Description",value:form.name,onChange:e=>setForm(f=>({...f,name:e.target.value})),className:`w-full border rounded-xl px-4 py-2.5 text-sm outline-none ${inp}`}),
+          h('input',{type:"number",placeholder:"Amount",value:form.amount,onChange:e=>setForm(f=>({...f,amount:e.target.value})),className:`w-full border rounded-xl px-4 py-2.5 text-sm outline-none ${inp}`}),
+          h('input',{type:"date",value:form.date,onChange:e=>setForm(f=>({...f,date:e.target.value})),className:`w-full border rounded-xl px-4 py-2.5 text-sm outline-none ${inp}`}),
+          form.type==="expense"&&h('select',{value:form.category,onChange:e=>setForm(f=>({...f,category:e.target.value})),className:`w-full border rounded-xl px-4 py-2.5 text-sm outline-none ${inp}`},CATS.map(c=>h('option',{key:c},c)))
+        ),
+        h('div',{className:"flex gap-3 mt-5"},
+          h('button',{onClick:()=>setModal(null),className:`flex-1 ${btnG}`},"Cancel"),
+          h('button',{onClick:submitForm,className:`flex-1 text-white font-bold rounded-xl px-5 py-2.5 transition-all shadow-lg`,style:{background:form.type==="income"?"linear-gradient(135deg,#10b981,#059669)":"linear-gradient(135deg,#ec4899,#f43f5e)"}},modal.mode==="add"?"Add":"Save")
+        )
+      )
+    ),
+    // ── DELETE CONFIRM ──
+    delConfirm&&h('div',{className:"fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40",style:{backdropFilter:"blur(4px)"}},
+      h('div',{className:`w-80 ${dark?"bg-gray-900 border border-pink-900/40":"bg-white border border-pink-100"} rounded-3xl p-6 text-center shadow-2xl`},
+        h('div',{className:"text-4xl mb-3"},"🌸"),
+        h('h3',{className:"font-black text-base mb-1"},"Delete Transaction?"),
+        h('p',{className:`text-sm ${muted} mb-5`},"This can't be undone."),
+        h('div',{className:"flex gap-3"},
+          h('button',{onClick:()=>setDelConfirm(null),className:`flex-1 ${btnG}`},"Cancel"),
+          h('button',{onClick:()=>deleteTxn(delConfirm),className:"flex-1 bg-rose-500 text-white font-bold rounded-xl py-2 hover:bg-rose-600 transition-colors"},"Delete")
+        )
+      )
+    )
+  );
+}
+
+const root=ReactDOM.createRoot(document.getElementById("root"));
+root.render(h(App));
+</script>
+</body>
+</html>
