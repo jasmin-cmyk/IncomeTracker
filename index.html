@@ -9,7 +9,7 @@
 <script>tailwind.config={darkMode:'class',theme:{extend:{}}}</script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js"></script>
 <script src="https://unpkg.com/framer-motion@11/dist/framer-motion.js" crossorigin></script>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:'Nunito',sans-serif}
@@ -22,7 +22,20 @@ input[type=date]::-webkit-calendar-picker-indicator{opacity:.5;cursor:pointer}
 <div id="root"></div>
 <script>
 const {useState,useEffect,useMemo,createElement:h,Fragment}=React;
-const {BarChart,Bar,LineChart,Line,PieChart,Pie,Cell,XAxis,YAxis,Tooltip,ResponsiveContainer,Legend}=Recharts;
+const {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend
+} = window.Recharts;
 const {motion,AnimatePresence}=window.Motion||{motion:{div:(p)=>h('div',p),button:(p)=>h('button',p)},AnimatePresence:(p)=>h(Fragment,null,p.children)};
 
 const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
